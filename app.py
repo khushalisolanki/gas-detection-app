@@ -6,7 +6,7 @@ from utils import detect_gas
 
 st.set_page_config(layout="wide")
 
-st.title("🔥 Gas / Explosive Sensor Intelligence Dashboard")
+st.title(" Gas / Explosive Sensor Intelligence Dashboard")
 
 uploaded_file = st.file_uploader("Upload Sensor CSV", type=["csv"])
 
@@ -68,9 +68,9 @@ if uploaded_file:
     st.subheader("Gas Detection Status")
 
     if gas_detected:
-        st.error("🚨 GAS DETECTED — See highlighted regions")
+        st.error(" GAS DETECTED — See highlighted regions")
     else:
-        st.success("✅ No gas detected")
+        st.success(" No gas detected")
 
     # ---------------- SIGNAL PLOTS ----------------
     st.subheader("Sensor Visualization")
@@ -120,3 +120,4 @@ if uploaded_file:
         result_df.to_csv(index=False),
         file_name="gas_detection_report.csv"
     )
+
