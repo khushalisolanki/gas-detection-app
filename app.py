@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
 st.title("Gas Sensor Intelligence Dashboard")
@@ -166,80 +165,80 @@ def run_detection(df):
 
 
 # ─────────────────────────────────────────────
-# PLOT BUILDERS
+# PER-CHUNK PLOT  (matches original exactly)
+# Layout: 2 rows × 3 cols
+#   Row 0 → Raw Data:  MOX1, MOX3, MOX4
+#   Row 1 → Slope:     MOX1, MOX3, MOX4
+# Time filter: time >= t0 + 3  (same as original valid_idx)
+# Slope: np.diff(raw) / np.diff(time)  (same as original)
 # ─────────────────────────────────────────────
-def plot_raw(df, chunk_meta, selected_sensors, file_title=""):
-    n = len(selected_sensors)
-    fig = make_subplots(rows=1, cols=n,
-                        subplot_titles=[f"{c} Raw" for c in selected_sensors])
+MOX_COLS_PLOT = ["MOX1(Ohms)", "MOX3(Ohms)", "MOX4(Ohms)"]
 
-    colors = ["steelblue", "seagreen", "mediumpurple"]
+def build_chunk_figure(df, chunk_idx, file_title, gas_found):
+    """
+    Build one matplotlib figure (2×3) for a single chunk,
+    exactly replicating the original script's output.
+    """
+    chunk_block_size = CHUNK_SIZE + 1
+    start_idx = chunk_idx * chunk_block_size
+    end_idx   = start_idx + CHUNK_SIZE
 
-    for i, col in enumerate(selected_sensors, start=1):
-        fig.add_trace(
-            go.Scatter(x=df["Time(sec)"], y=df[col],
-                       mode="lines", name=col,
-                       line=dict(width=1.5, color=colors[(i - 1) % len(colors)])),
-            row=1, col=i,
-        )
-        # Shade gas-detected regions
-        for meta in chunk_meta:
-            if meta["gas"]:
-                fig.add_vrect(
-                    x0=meta["start"], x1=meta["end"],
-                    fillcolor="red", opacity=0.12,
-                    layer="below", line_width=0,
-                    row=1, col=i,
-                )
-        fig.update_xaxes(title_text="Time (sec)", row=1, col=i)
-        fig.update_yaxes(title_text="Resistance (Ohms)", exponentformat="none", row=1, col=i)
+    if end_idx > len(df):
+        return None
 
-    fig.update_layout(
-        title_text=f"Raw Signal — {file_title}" if file_title else "Raw Signal",
-        height=420, showlegend=False,
+    # Time filter: keep rows where time >= first_time + 3  (original: valid_idx)
+    time_chunk = df["Time(sec)"].iloc[start_idx:end_idx]
+    if time_chunk.empty:
+        return None
+
+    valid_idx  = time_chunk >= (time_chunk.iloc[0] + 3)
+    time_chunk = time_chunk[valid_idx]
+
+    if time_chunk.empty:
+        return None
+
+    fig, axs = plt.subplots(2, 3, figsize=(15, 8))
+
+    # Colour the figure border red if gas detected in this chunk
+    border_color = "#d62728" if gas_found else "#2196F3"
+    fig.patch.set_edgecolor(border_color)
+    fig.patch.set_linewidth(3)
+
+    for i, col in enumerate(MOX_COLS_PLOT):
+        raw_values = df[col].iloc[start_idx:end_idx]
+        raw_values = raw_values[valid_idx]
+
+        # Slope: np.diff — matches original
+        if len(raw_values) >= 2:
+            slope      = np.diff(raw_values.values) / np.diff(time_chunk.values)
+            time_slope = time_chunk.iloc[:-1]
+        else:
+            slope      = np.array([])
+            time_slope = time_chunk.iloc[:-1]
+
+        # ── Row 0: Raw Data ──
+        axs[0, i].plot(time_chunk, raw_values, color="#1f77b4")
+        axs[0, i].set_title(f"Raw Data: {col}")
+        axs[0, i].set_xlabel("Time (sec)")
+        axs[0, i].set_ylabel(col)
+        axs[0, i].grid(True, alpha=0.3)
+
+        # ── Row 1: Slope ──
+        if len(slope) > 0:
+            axs[1, i].plot(time_slope, slope, color="#ff7f0e")
+        axs[1, i].set_title(f"Slope vs Time: {col}")
+        axs[1, i].set_xlabel("Time (sec)")
+        axs[1, i].set_ylabel(f"Slope of {col}")
+        axs[1, i].grid(True, alpha=0.3)
+
+    status = " GAS DETECTED" if gas_found else " No Gas"
+    plt.suptitle(
+        f"{file_title}  |  Chunk {chunk_idx + 1}  |  {status}",
+        fontsize=12,
+        color="red" if gas_found else "black",
+        fontweight="bold" if gas_found else "normal",
     )
-    return fig
-
-
-def plot_slope(df, chunk_meta, selected_sensors, file_title=""):
-    n = len(selected_sensors)
-    fig = make_subplots(rows=1, cols=n,
-                        subplot_titles=[f"{c} Slope" for c in selected_sensors])
-
-    for i, col in enumerate(selected_sensors, start=1):
-        time_vals = df["Time(sec)"].values
-        raw_vals  = df[col].values
-        valid     = ~np.isnan(raw_vals)
-        t = time_vals[valid]
-        r = raw_vals[valid]
-
-        if len(t) >= 2:
-            # np.diff matches original script (not np.gradient)
-            slope = np.diff(r) / np.diff(t)
-            t_mid = (t[:-1] + t[1:]) / 2
-
-            fig.add_trace(
-                go.Scatter(x=t_mid, y=slope,
-                           mode="lines", name=f"Slope {col}",
-                           line=dict(width=1.5, color="darkorange")),
-                row=1, col=i,
-            )
-
-        for meta in chunk_meta:
-            if meta["gas"]:
-                fig.add_vrect(
-                    x0=meta["start"], x1=meta["end"],
-                    fillcolor="red", opacity=0.12,
-                    layer="below", line_width=0,
-                    row=1, col=i,
-                )
-        fig.update_xaxes(title_text="Time (sec)", row=1, col=i)
-        fig.update_yaxes(title_text="dR/dt", exponentformat="none", row=1, col=i)
-
-    fig.update_layout(
-        title_text=f"Slope — {file_title}" if file_title else "Slope",
-        height=420, showlegend=False,
-    )
+    plt.tight_layout()
     return fig
 
 
@@ -266,18 +265,8 @@ if uploaded_file:
 
     # ── SIDEBAR ──
     st.sidebar.header("Dashboard Controls")
-    selected_sensors = st.sidebar.multiselect(
-        "Select Sensors", MOX_COLS, default=MOX_COLS
-    )
-    plot_type = st.sidebar.radio(
-        "Select Plot Type", ["Raw Only", "Slope Only", "Both"]
-    )
     show_metrics = st.sidebar.checkbox("Show Detection Metrics Table")
     show_data    = st.sidebar.checkbox("Show Raw Data Preview")
-
-    if not selected_sensors:
-        st.warning("Please select at least one sensor.")
-        st.stop()
 
     # ── RUN DETECTION ──
     result_df, chunk_meta = run_detection(df)
@@ -291,18 +280,24 @@ if uploaded_file:
     else:
         st.success(" No gas detected")
 
-    # ── PLOTS ──
-    st.subheader("Sensor Visualization")
-    if plot_type in ["Raw Only", "Both"]:
-        st.plotly_chart(
-            plot_raw(df, chunk_meta, selected_sensors, file_title),
-            use_container_width=True,
+    # ── PER-CHUNK PLOTS (2×3 grid per chunk, matching original script exactly) ──
+    st.subheader("Sensor Visualization — Per Chunk")
+
+    total_chunks = (len(df) + 1) // (CHUNK_SIZE + 1)
+
+    for chunk_idx in range(total_chunks):
+        # Look up whether this chunk had gas detected
+        gas_found = (
+            result_df.loc[result_df["Chunk"] == chunk_idx + 1, "Gas Detected"].values[0]
+            if chunk_idx < len(result_df) else False
         )
-    if plot_type in ["Slope Only", "Both"]:
-        st.plotly_chart(
-            plot_slope(df, chunk_meta, selected_sensors, file_title),
-            use_container_width=True,
-        )
+
+        fig = build_chunk_figure(df, chunk_idx, file_title, gas_found)
+        if fig is None:
+            continue
+
+        st.pyplot(fig)
+        plt.close(fig)
 
     # ── RESULTS TABLE ──
     st.subheader("Detection Results by Chunk")
