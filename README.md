@@ -1,4 +1,4 @@
-# Gas / Explosive Sensor Intelligence Dashboard
+# Gas Sensor Intelligence Dashboard
 
 An interactive data application for analyzing multi-sensor gas signals, detecting gas presence using chunk-based signal analysis, and visualizing raw and derived features (slope) in real time.
 
